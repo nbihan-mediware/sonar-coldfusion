@@ -21,16 +21,21 @@ import com.stepstone.sonar.plugin.coldfusion.cflint.CFLintAnalyzer;
 import com.stepstone.sonar.plugin.coldfusion.cflint.CFlintAnalysisResultImporter;
 import com.stepstone.sonar.plugin.coldfusion.cflint.CFlintConfigExporter;
 import org.sonar.api.batch.fs.FileSystem;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.Sensor;
 import org.sonar.api.batch.sensor.SensorContext;
 import org.sonar.api.batch.sensor.SensorDescriptor;
+import org.sonar.api.measures.CoreMetrics;
+import org.sonar.api.measures.Metric;
 import org.sonar.api.profiles.RulesProfile;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 
 import javax.xml.stream.XMLStreamException;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 
 public class ColdFusionSensor implements Sensor {
@@ -59,6 +64,7 @@ public class ColdFusionSensor implements Sensor {
         try {
             analyze(context);
             importResults(context);
+            measureProcessor(context);
         } catch (IOException | XMLStreamException e) {
             LOGGER.error("",e);
         }
@@ -91,6 +97,52 @@ public class ColdFusionSensor implements Sensor {
         } finally {
             deleteFile(new File(fs.workDir(), "cflint-result.xml"));
         }
+    }
+
+    private void measureProcessor(SensorContext context) throws IOException {
+        LOGGER.info("Starting measure processor");
+
+        for (InputFile inputFile : fs.inputFiles(fs.predicates().hasLanguage(ColdFusionPlugin.LANGUAGE_KEY))) {
+            metricsLinesCounter(inputFile, context);
+        }
+        LOGGER.info("Measure processor done");
+    }
+
+
+    private void metricsLinesCounter(InputFile inputFile, SensorContext context) throws IOException {
+        String currentLine;
+        int commentLines = 0;
+        int blankLines = 0;
+        int lines = 0;
+        Metric metricLinesOfCode = CoreMetrics.NCLOC;
+        Metric metricLines = CoreMetrics.LINES;
+        Metric metricCommentLines = CoreMetrics.COMMENT_LINES;
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(inputFile.inputStream()));
+        if (inputFile.inputStream() != null) {
+            while ((currentLine = reader.readLine()) != null) {
+                lines++;
+                if(currentLine.contains("<!--")){
+                    commentLines++;
+                    if(currentLine.contains("-->")) {
+                        continue;
+                    }
+                    commentLines++;
+                    lines++;
+                    while(!(reader.readLine()).contains("-->")) {
+                        lines++;
+                        commentLines++;
+                    }
+                } else if (currentLine.trim().isEmpty()){
+                    blankLines++;
+                }
+            }
+        }
+        reader.close();
+
+        context.newMeasure().forMetric(metricCommentLines).on(inputFile).withValue(commentLines).save();
+        context.newMeasure().forMetric(metricLinesOfCode).on(inputFile).withValue(lines-blankLines-commentLines).save();
+        context.newMeasure().forMetric(metricLines).on(inputFile).withValue(lines).save();
     }
 
 }

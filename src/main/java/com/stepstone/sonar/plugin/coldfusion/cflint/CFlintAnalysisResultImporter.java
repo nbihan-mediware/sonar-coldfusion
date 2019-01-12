@@ -76,40 +76,9 @@ public class CFlintAnalysisResultImporter {
 
                 if ("issue".equals(tagName)) {
                     handleIssueTag(new IssueAttributes(stream));
-                } else if ("counts".equals(tagName)) {
-                    handleCountsTag(new CountsAttributes(stream));
                 }
             }
         }
-    }
-
-    private void handleCountsTag(CountsAttributes countsAttributes){
-        Metric metricLines = new Metric() {
-            @Override
-            public String key() {
-                return CoreMetrics.LINES.key();
-            }
-
-            @Override
-            public Class valueType() {
-                return Integer.class;
-            }
-        };
-
-        Metric metricFiles = new Metric() {
-            @Override
-            public String key() {
-                return CoreMetrics.FILES.key();
-            }
-
-            @Override
-            public Class valueType() {
-                return Integer.class;
-            }
-        };
-        LOGGER.info("CFLint analyzed {} lines for {} files", countsAttributes.getTotalLines(), countsAttributes.getTotalFiles());
-        sensorContext.newMeasure().on(sensorContext.module()).forMetric(metricLines).withValue(countsAttributes.getTotalLines()).save();
-        sensorContext.newMeasure().on(sensorContext.module()).forMetric(metricFiles).withValue(countsAttributes.getTotalFiles()).save();
     }
 
     private void handleIssueTag(IssueAttributes issueAttributes) throws XMLStreamException {
@@ -125,10 +94,10 @@ public class CFlintAnalysisResultImporter {
 
                 if ("location".equals(tagName)) {
                     LocationAttributes locationAttributes = new LocationAttributes(stream);
-                    //InputFile inputFiletest = fs.inputFiles(fs.predicates().hasFilename())
+
                     InputFile inputFile = fs.inputFile(fs.predicates().hasAbsolutePath(locationAttributes.getFile()));
                     if(inputFile == null){
-                        LOGGER.error("File {} is null", locationAttributes.getFile());
+                        LOGGER.info("File {} is null", locationAttributes.getFile());
                     }
                     createNewIssue(issueAttributes, locationAttributes, inputFile);
                 }

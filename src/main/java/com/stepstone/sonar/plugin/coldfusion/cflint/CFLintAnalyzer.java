@@ -55,7 +55,7 @@ public class CFLintAnalyzer {
                 .addArgument(extractCflintJar().getPath())
                 .addArgument("-xml")
                 .addArgument("-folder")
-                .addArgument(settings.get("sonar.sources").get())
+                .addArgument(settings.get("sonar.projectBaseDir").get())
                 .addArgument("-xmlfile")
                 .addArgument(fs.workDir() + File.separator + "cflint-result.xml")
                 .addArgument("-configfile")
