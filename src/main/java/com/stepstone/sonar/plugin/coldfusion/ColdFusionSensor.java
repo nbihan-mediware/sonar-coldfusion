@@ -37,6 +37,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
 
 public class ColdFusionSensor implements Sensor {
 
@@ -99,16 +102,37 @@ public class ColdFusionSensor implements Sensor {
         }
     }
 
-    private void measureProcessor(SensorContext context) throws IOException {
+    private void measureProcessor(SensorContext context) {
         LOGGER.info("Starting measure processor");
 
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        List<Callable<Integer>> callableTasks = new ArrayList<>();
+
         for (InputFile inputFile : fs.inputFiles(fs.predicates().hasLanguage(ColdFusionPlugin.LANGUAGE_KEY))) {
-            metricsLinesCounter(inputFile, context);
+            Callable<Integer> callableTask = () -> {
+                try {
+                    metricsLinesCounter(inputFile, context);
+                    return 1;
+                } catch (IOException e) {
+                    return 0;
+                }
+            };
+            callableTasks.add(callableTask);
         }
+
+        try {
+            executorService.invokeAll(callableTasks);
+            executorService.shutdown();
+            executorService.awaitTermination(2, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            LOGGER.error("",e);
+        }
+
         LOGGER.info("Measure processor done");
     }
 
-
+    //Very basic and naive line of code counter for Coldfusion
+    //Might count a line of code as comment
     private void metricsLinesCounter(InputFile inputFile, SensorContext context) throws IOException {
         String currentLine;
         int commentLines = 0;
@@ -117,28 +141,31 @@ public class ColdFusionSensor implements Sensor {
         Metric metricLinesOfCode = CoreMetrics.NCLOC;
         Metric metricLines = CoreMetrics.LINES;
         Metric metricCommentLines = CoreMetrics.COMMENT_LINES;
+        if(inputFile==null){
+            return;
+        }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputFile.inputStream()));
-        if (inputFile.inputStream() != null) {
-            while ((currentLine = reader.readLine()) != null) {
-                lines++;
-                if(currentLine.contains("<!--")){
-                    commentLines++;
-                    if(currentLine.contains("-->")) {
-                        continue;
-                    }
-                    commentLines++;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputFile.inputStream()))) {
+            if (inputFile.inputStream() != null) {
+                while ((currentLine = reader.readLine()) != null) {
                     lines++;
-                    while(!(reader.readLine()).contains("-->")) {
-                        lines++;
+                    if (currentLine.contains("<!--")) {
                         commentLines++;
+                        if (currentLine.contains("-->")) {
+                            continue;
+                        }
+                        commentLines++;
+                        lines++;
+                        while (!(reader.readLine()).contains("-->")) {
+                            lines++;
+                            commentLines++;
+                        }
+                    } else if (currentLine.trim().isEmpty()) {
+                        blankLines++;
                     }
-                } else if (currentLine.trim().isEmpty()){
-                    blankLines++;
                 }
             }
         }
-        reader.close();
 
         context.newMeasure().forMetric(metricCommentLines).on(inputFile).withValue(commentLines).save();
         context.newMeasure().forMetric(metricLinesOfCode).on(inputFile).withValue(lines-blankLines-commentLines).save();
